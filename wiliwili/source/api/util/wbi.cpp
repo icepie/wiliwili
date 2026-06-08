@@ -12,6 +12,7 @@
 #include <mutex>
 #include <cpr/cpr.h>
 #include <pystring.h>
+#include <borealis/core/thread.hpp>
 
 #include "bilibili/util/md5.hpp"
 #include "bilibili/util/http.hpp"
@@ -84,12 +85,16 @@ bool setMixinKey(const std::string& img_key, const std::string& sub_key, std::ti
     return true;
 }
 
+void dispatchSuccess(const std::function<void()>& success) {
+    brls::Threading::async(success);
+}
+
 void useFallbackWbiKeys(const std::function<void()>& success, const ErrorCallback& error, std::time_t now,
                         const std::string& reason) {
 #ifdef ANDROID
     if (setMixinKey(FALLBACK_IMG_KEY, FALLBACK_SUB_KEY, now)) {
         printf("WBI key fetch failed, using fallback keys: %s\n", reason.c_str());
-        success();
+        dispatchSuccess(success);
         return;
     }
 
@@ -109,74 +114,76 @@ void updateWbiKeys(const std::function<void()>& success, const ErrorCallback& er
     {
         std::lock_guard lock(g_mixin_key_mutex);
         if (now - g_last_update_time < 3600 && !g_mixin_key.empty()) {
-            success();
+            dispatchSuccess(success);
             return;
         }
     }
 
-    auto session = HTTP::createSession();
+    brls::Threading::async([success, error, now]() {
+        auto session = HTTP::createSession();
 #ifdef ANDROID
-    cpr::Header headers = HTTP::HEADERS;
-    headers["User-Agent"] =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
-    headers["Referer"]         = "https://www.bilibili.com/";
-    headers["Accept"]          = "application/json, text/plain, */*";
-    headers["Accept-Language"] = "zh-CN,zh;q=0.9,en;q=0.8";
-    session->SetHeader(headers);
+        cpr::Header headers = HTTP::HEADERS;
+        headers["User-Agent"] =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+        headers["Referer"]         = "https://www.bilibili.com/";
+        headers["Accept"]          = "application/json, text/plain, */*";
+        headers["Accept-Language"] = "zh-CN,zh;q=0.9,en;q=0.8";
+        session->SetHeader(headers);
 #endif
-    session->SetUrl(cpr::Url{parseLink(Api::Nav)});
-    session->GetCallback([success, error, now](const cpr::Response& r) {
+        session->SetUrl(cpr::Url{parseLink(Api::Nav)});
+        session->GetCallback([success, error, now](const cpr::Response& r) {
 #ifdef ANDROID
-        if (r.error) {
-            useFallbackWbiKeys(success, error, now, r.error.message);
-            return;
-        }
-#endif
-
-        if (r.status_code != 200) {
-#ifdef ANDROID
-            useFallbackWbiKeys(success, error, now, "HTTP status " + std::to_string(r.status_code));
-#else
-            ERROR_MSG("WBI签名获取失败", -412);
-#endif
-            return;
-        }
-
-        try {
-            if (nlohmann::json res = nlohmann::json::parse(r.text);
-                res.contains("data") && res["data"].contains("wbi_img")) {
-                const std::string img_key = extractKeyFromUrl(res["data"]["wbi_img"]["img_url"]);
-                const std::string sub_key = extractKeyFromUrl(res["data"]["wbi_img"]["sub_url"]);
-
-                // 计算并缓存 mixin_key
-                if (!setMixinKey(img_key, sub_key, now)) {
-#ifdef ANDROID
-                    useFallbackWbiKeys(success, error, now, "empty or invalid keys from nav response");
-#else
-                    ERROR_MSG("WBI签名失败", -412);
-#endif
-                    return;
-                }
-
-                // 继续执行网络请求
-                success();
+            if (r.error) {
+                useFallbackWbiKeys(success, error, now, r.error.message);
                 return;
             }
-        } catch (const std::exception& e) {
+#endif
+
+            if (r.status_code != 200) {
 #ifdef ANDROID
-            useFallbackWbiKeys(success, error, now, e.what());
+                useFallbackWbiKeys(success, error, now, "HTTP status " + std::to_string(r.status_code));
+#else
+                ERROR_MSG("WBI签名获取失败", -412);
+#endif
+                return;
+            }
+
+            try {
+                if (nlohmann::json res = nlohmann::json::parse(r.text);
+                    res.contains("data") && res["data"].contains("wbi_img")) {
+                    const std::string img_key = extractKeyFromUrl(res["data"]["wbi_img"]["img_url"]);
+                    const std::string sub_key = extractKeyFromUrl(res["data"]["wbi_img"]["sub_url"]);
+
+                    // 计算并缓存 mixin_key
+                    if (!setMixinKey(img_key, sub_key, now)) {
+#ifdef ANDROID
+                        useFallbackWbiKeys(success, error, now, "empty or invalid keys from nav response");
+#else
+                        ERROR_MSG("WBI签名失败", -412);
+#endif
+                        return;
+                    }
+
+                    // 继续执行网络请求
+                    dispatchSuccess(success);
+                    return;
+                }
+            } catch (const std::exception& e) {
+#ifdef ANDROID
+                useFallbackWbiKeys(success, error, now, e.what());
+#else
+                ERROR_MSG("WBI签名失败", -412);
+#endif
+                return;
+            }
+
+#ifdef ANDROID
+            useFallbackWbiKeys(success, error, now, "missing data.wbi_img in nav response");
 #else
             ERROR_MSG("WBI签名失败", -412);
 #endif
-            return;
-        }
-
-#ifdef ANDROID
-        useFallbackWbiKeys(success, error, now, "missing data.wbi_img in nav response");
-#else
-        ERROR_MSG("WBI签名失败", -412);
-#endif
+        });
     });
 }
 
