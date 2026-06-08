@@ -1,0 +1,70 @@
+name: Build Android
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        abi:
+          - armeabi-v7a
+          - arm64-v8a
+          - x86
+          - x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: |
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl unzip ninja-build cmake build-essential pkg-config
+
+      - name: Patch SDL for NDK 27
+        run: |
+          bash scripts/android/patch_sdl_ndk27.sh
+
+      - name: Prepare Android dependencies
+        run: |
+          bash scripts/android/prepare_deps.sh
+
+      - name: Build libromfs generator
+        working-directory: library/borealis
+        run: |
+          bash build_libromfs_generator.sh
+          cp -f libromfs-generator ../../android-project/app/jni/borealis/libromfs-generator
+
+      - name: Build APK
+        working-directory: android-project
+        run: |
+          ./gradlew --no-daemon :app:assembleDebug -PANDROID_ABIS=${{ matrix.abi }}
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiliwili-android-${{ matrix.abi }}-debug
+          path: android-project/app/build/outputs/apk/debug/app-${{ matrix.abi }}-debug.apk
+          if-no-files-found: error

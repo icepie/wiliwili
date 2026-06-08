@@ -6,11 +6,22 @@
 
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
+#ifdef ANDROID
+#include <dirent.h>
+#include <sys/stat.h>
+#include <algorithm>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#endif
 
 #include "bilibili/util/md5.hpp"
 #include "bilibili/util/json.hpp"
 #include "bilibili/util/wbi.hpp"
 #include "utils/number_helper.hpp"
+#ifdef ANDROID
+#include "utils/config_helper.hpp"
+#endif
 #include <pystring.h>
 
 namespace bilibili {
@@ -80,16 +91,65 @@ public:
 
     static std::string getEncodedCookie(const cpr::Cookies& cookies);
 
+#ifdef ANDROID
+    static std::string getAndroidCaBundlePath() {
+        static std::string path = []() {
+            std::string bundle = ProgramConfig::instance().getConfigDir() + "/android-ca-bundle.pem";
+            struct stat bundleStat {};
+            if (stat(bundle.c_str(), &bundleStat) == 0 && bundleStat.st_size > 0) return bundle;
+
+            DIR* dir = opendir("/system/etc/security/cacerts");
+            if (!dir) return std::string{};
+
+            std::vector<std::string> certs;
+            while (auto* entry = readdir(dir)) {
+                std::string name = entry->d_name;
+                if (name.size() > 2 && name.substr(name.size() - 2) == ".0") {
+                    certs.emplace_back("/system/etc/security/cacerts/" + name);
+                }
+            }
+            closedir(dir);
+            std::sort(certs.begin(), certs.end());
+
+            std::ofstream out(bundle, std::ios::binary | std::ios::trunc);
+            if (!out) return std::string{};
+            for (const auto& cert : certs) {
+                std::ifstream in(cert, std::ios::binary);
+                if (!in) continue;
+                out << in.rdbuf();
+                out << '\n';
+            }
+            out.close();
+
+            if (stat(bundle.c_str(), &bundleStat) == 0 && bundleStat.st_size > 0) return bundle;
+            return std::string{};
+        }();
+        return path;
+    }
+#endif
+
+    static void configureSession(cpr::Session& session) {
+        session.SetTimeout(cpr::Timeout{bilibili::HTTP::TIMEOUT});
+        session.SetConnectTimeout(cpr::ConnectTimeout{bilibili::HTTP::CONNECTION_TIMEOUT});
+        session.SetProxies(bilibili::HTTP::PROXIES);
+        session.SetVerifySsl(bilibili::HTTP::VERIFY);
+#ifdef ANDROID
+        if (bilibili::HTTP::VERIFY.verify) {
+            auto caBundle = getAndroidCaBundlePath();
+            if (!caBundle.empty()) {
+                session.SetSslOptions(cpr::Ssl(cpr::ssl::CaInfo{std::move(caBundle)}));
+            }
+        }
+#endif
+    }
+
     static std::shared_ptr<cpr::Session> createSession() {
         auto session = std::make_shared<cpr::Session>();
         CURL* curl = session->GetCurlHolder()->handle;
         curl_easy_setopt(curl, CURLOPT_SHARE, HTTP::CURL_SHARE.getShare());
         curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, HTTP::DNS_CACHE_TIMEOUT);
-        session->SetTimeout(cpr::Timeout{bilibili::HTTP::TIMEOUT});
-        session->SetConnectTimeout(cpr::ConnectTimeout{bilibili::HTTP::CONNECTION_TIMEOUT});
         session->SetHeader(bilibili::HTTP::HEADERS);
-        session->SetProxies(bilibili::HTTP::PROXIES);
-        session->SetVerifySsl(bilibili::HTTP::VERIFY);
+        configureSession(*session);
         return session;
     }
 

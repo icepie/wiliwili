@@ -1,0 +1,144 @@
+plugins {
+    id 'com.android.application'
+}
+
+def androidAbis = ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']
+def selectedAbis = project.hasProperty('ANDROID_ABIS')
+        ? project.property('ANDROID_ABIS').toString().split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+        : androidAbis
+
+android {
+    namespace = "cn.xfangfang.wiliwili"
+    compileSdkVersion 35
+    defaultConfig {
+        applicationId "cn.xfangfang.wiliwili"
+        minSdkVersion 23
+        targetSdkVersion 35
+        versionCode 1
+        versionName "1.6.0"
+        // borealis need at least ndk r22 (r21 don't have std::filesystem support)
+        // The newer NDK library will cause lower versions of Android failed to run.
+        // r26: support api21 and later
+        // r24/r25: support api19 and later
+        // r22/23: support api16 and later
+        ndkVersion "27.1.12297006"
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_PLATFORM=android-23",
+                        "-DANDROID_STL=c++_shared",
+                        "-DCMAKE_WARN_DEPRECATED=FALSE",
+                        "-DANDROID_MPV_ROOT=${rootProject.projectDir}/../third_party/android/mpv-android",
+                        "-DANDROID_OPENSSL_ROOT=${rootProject.projectDir}/../third_party/android/openssl"
+                abiFilters(*selectedAbis)
+                version = '3.16.0+'
+            }
+        }
+    }
+    signingConfigs {
+        release {
+            // keytool -genkey -alias borealis -keyalg RSA -keypass password -keystore borealis.jks -storepass password -validity 100000
+            storeFile file("borealis.jks")
+            storePassword 'password'
+            keyAlias 'borealis'
+            keyPassword 'password'
+            // Optional, specify signing versions used
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+    }
+    splits {
+        abi {
+            enable true
+            reset()
+            include(*selectedAbis)
+            universalApk false
+        }
+    }
+    applicationVariants.all { variant ->
+        tasks["merge${variant.name.capitalize()}Assets"]
+            .dependsOn("externalNativeBuild${variant.name.capitalize()}")
+    }
+    if (!project.hasProperty('EXCLUDE_NATIVE_LIBS')) {
+        sourceSets.main {
+            jniLibs.srcDir 'libs'
+            jniLibs.srcDir '../../third_party/android/mpv-android'
+            jniLibs.srcDir '../../third_party/android/openssl'
+        }
+        externalNativeBuild {
+            cmake {
+                path 'jni/CMakeLists.txt'
+                version = '3.16.0+'
+            }
+        }
+    }
+    lint {
+        abortOnError = false
+    }
+    packagingOptions {
+        selectedAbis.each { abi ->
+            pickFirst "lib/${abi}/libc++_shared.so"
+        }
+        excludes += ['lib/**/libcrypto.so', 'lib/**/libssl.so']
+    }
+}
+
+tasks.register('useMpvAndroidCxxRuntimeDebug') {
+    dependsOn 'externalNativeBuildDebug'
+    doLast {
+        def cxxRoot = file("${buildDir}/intermediates/cxx/Debug")
+        selectedAbis.each { abi ->
+            def mpvCxx = file("${rootProject.projectDir}/../third_party/android/mpv-android/${abi}/libc++_shared.so")
+            if (!mpvCxx.exists()) {
+                throw new GradleException("Missing mpv-android libc++ runtime: ${mpvCxx}")
+            }
+            fileTree(cxxRoot).matching {
+                include "**/obj/${abi}/libc++_shared.so"
+            }.each { target ->
+                copy {
+                    from mpvCxx
+                    into target.parentFile
+                }
+            }
+        }
+    }
+}
+
+tasks.register('useMpvAndroidCxxRuntimeRelease') {
+    dependsOn 'externalNativeBuildRelease'
+    doLast {
+        def cxxRoot = file("${buildDir}/intermediates/cxx/Release")
+        selectedAbis.each { abi ->
+            def mpvCxx = file("${rootProject.projectDir}/../third_party/android/mpv-android/${abi}/libc++_shared.so")
+            if (!mpvCxx.exists()) {
+                throw new GradleException("Missing mpv-android libc++ runtime: ${mpvCxx}")
+            }
+            fileTree(cxxRoot).matching {
+                include "**/obj/${abi}/libc++_shared.so"
+            }.each { target ->
+                copy {
+                    from mpvCxx
+                    into target.parentFile
+                }
+            }
+        }
+    }
+}
+
+tasks.matching { it.name == 'mergeDebugNativeLibs' }.configureEach {
+    dependsOn 'useMpvAndroidCxxRuntimeDebug'
+}
+
+tasks.matching { it.name == 'mergeReleaseNativeLibs' }.configureEach {
+    dependsOn 'useMpvAndroidCxxRuntimeRelease'
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+}

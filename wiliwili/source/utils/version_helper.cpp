@@ -137,6 +137,11 @@ void APPVersion::checkUpdate(int delay, bool showUpToDateDialog) {
                     brls::Logger::error("check update failed: {} {} {}", r.status_code, r.text.c_str(), e.what());
                 }
             },
-            bilibili::HTTP::VERIFY, bilibili::HTTP::PROXIES, cpr::Url{url}, cpr::Timeout{10000});
+            bilibili::HTTP::VERIFY, bilibili::HTTP::PROXIES, cpr::Url{url}, cpr::Timeout{10000}
+#ifdef ANDROID
+            ,
+            cpr::Ssl(cpr::ssl::CaInfo{bilibili::HTTP::getAndroidCaBundlePath()})
+#endif
+        );
     });
 }

@@ -4,7 +4,9 @@
 
 #ifdef IOS
 #include <CoreFoundation/CoreFoundation.h>
-#elif defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#elif defined(ANDROID)
+#include <SDL2/SDL_system.h>
+#elif defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
 #include <unistd.h>
 #include <borealis/platforms/desktop/desktop_platform.hpp>
 #if defined(_WIN32)
@@ -516,7 +518,7 @@ void ProgramConfig::load() {
 
     // 初始化自定义手柄按键映射
 #ifdef IOS
-#elif defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#elif defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
     brls::DesktopPlatform::GAMEPAD_DB = getConfigDir() + "/gamecontrollerdb.txt";
 #endif
 
@@ -1135,6 +1137,12 @@ std::string ProgramConfig::getConfigDir() {
     return "/data/wiliwili";
 #elif defined(__PSV__)
     return "ux0:/data/wiliwili";
+#elif defined(ANDROID)
+    const char* path = SDL_AndroidGetInternalStoragePath();
+    if (path && path[0] != '\0') {
+        return std::string(path) + "/wiliwili";
+    }
+    return "/data/data/cn.xfangfang.wiliwili/files/wiliwili";
 #elif defined(IOS)
     CFURLRef homeURL = CFCopyHomeDirectoryURL();
     if (homeURL != nullptr) {
@@ -1186,9 +1194,9 @@ void ProgramConfig::exit(char* argv[]) {
 #ifdef IOS
 #elif defined(PS4)
 #elif __PSV__
-#elif defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#elif defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
     if (!brls::DesktopPlatform::RESTART_APP) return;
-#ifdef __linux__
+#if defined(__linux__) && !defined(ANDROID)
     char filePath[PATH_MAX + 1];
     ssize_t count = readlink("/proc/self/exe", filePath, PATH_MAX);
     if (count <= 0)

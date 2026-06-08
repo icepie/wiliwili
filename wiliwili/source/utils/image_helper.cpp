@@ -207,10 +207,7 @@ void ImageHelper::requestImage() {
     CURL* curl = session.GetCurlHolder()->handle;
     curl_easy_setopt(curl, CURLOPT_SHARE, ImageThreadPool::instance().getShare());
     curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, bilibili::HTTP::DNS_CACHE_TIMEOUT);
-    session.SetTimeout(cpr::Timeout{bilibili::HTTP::TIMEOUT});
-    session.SetConnectTimeout(cpr::ConnectTimeout{bilibili::HTTP::CONNECTION_TIMEOUT});
-    session.SetVerifySsl(bilibili::HTTP::VERIFY);
-    session.SetProxies(bilibili::HTTP::PROXIES);
+    bilibili::HTTP::configureSession(session);
     session.SetUrl(cpr::Url{this->imageUrl});
     session.SetProgressCallback(cpr::ProgressCallback([this](...) -> bool { return !this->isCancel; }));
     cpr::Response r = session.Get();
