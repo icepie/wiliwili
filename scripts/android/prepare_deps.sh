@@ -13,7 +13,11 @@ OPENSSL_PREBUILT_REF="${OPENSSL_PREBUILT_REF:-master}"
 OPENSSL_PREBUILT_URL="https://github.com/PurpleI2P/OpenSSL-for-Android-Prebuilt/archive/${OPENSSL_PREBUILT_REF}.tar.gz"
 OPENSSL_FLAVOR="${OPENSSL_FLAVOR:-openssl-1.1.1k-clang}"
 
-ABIS=(armeabi-v7a arm64-v8a x86 x86_64)
+if [[ -n "${ANDROID_ABIS:-}" ]]; then
+    IFS=',' read -r -a ABIS <<< "${ANDROID_ABIS}"
+else
+    ABIS=(armeabi-v7a arm64-v8a x86 x86_64)
+fi
 
 download() {
     local url="$1"
@@ -41,7 +45,7 @@ extract_mpv_android() {
 
     local mpv_header_ref="${MPV_HEADER_REF:-v0.41.0}"
     for header in client.h render.h render_gl.h stream_cb.h; do
-        download "https://raw.githubusercontent.com/mpv-player/mpv/${mpv_header_ref}/libmpv/${header}" \
+        download "https://raw.githubusercontent.com/mpv-player/mpv/${mpv_header_ref}/include/mpv/${header}" \
             "${MPV_DIR}/include/mpv/${header}"
     done
 }

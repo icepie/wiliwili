@@ -9,6 +9,7 @@
 #include <vector>
 #include <algorithm>
 #include <map>
+#include <mutex>
 #include <cpr/cpr.h>
 #include <pystring.h>
 
@@ -30,6 +31,13 @@ static std::time_t g_last_update_time = 0;
 // 缓存的 mixin_key
 static std::string g_mixin_key;
 static std::mutex g_mixin_key_mutex;
+
+#ifdef ANDROID
+// Last known keys from /x/web-interface/nav. Used only on Android when the key
+// endpoint itself is temporarily unavailable, so WBI endpoints are not hard-blocked.
+constexpr const char* FALLBACK_IMG_KEY = "7cd084941338484aae1ad9425b84077c";
+constexpr const char* FALLBACK_SUB_KEY = "4932caff0ff746eab6f01bf08b70ac45";
+#endif
 
 /**
  * 从URL中提取key
@@ -54,6 +62,8 @@ std::string extractKeyFromUrl(const std::string& url) {
  */
 std::string getMixinKey(const std::string& img_key, const std::string& sub_key) {
     const std::string raw_key = img_key + sub_key;
+    if (raw_key.size() < 64) return "";
+
     std::string key;
     key.reserve(32);
 
@@ -64,22 +74,75 @@ std::string getMixinKey(const std::string& img_key, const std::string& sub_key) 
     return key;
 }
 
-void updateWbiKeys(const std::function<void()>& success, const ErrorCallback& error) {
-    const std::time_t now = std::time(nullptr);
+bool setMixinKey(const std::string& img_key, const std::string& sub_key, std::time_t update_time) {
+    auto mixin_key = getMixinKey(img_key, sub_key);
+    if (mixin_key.empty()) return false;
 
-    // 如果距离上次更新时间少于1小时，则不更新
-    if (now - g_last_update_time < 3600 && !g_mixin_key.empty()) {
+    std::lock_guard lock(g_mixin_key_mutex);
+    g_mixin_key        = std::move(mixin_key);
+    g_last_update_time = update_time;
+    return true;
+}
+
+void useFallbackWbiKeys(const std::function<void()>& success, const ErrorCallback& error, std::time_t now,
+                        const std::string& reason) {
+#ifdef ANDROID
+    if (setMixinKey(FALLBACK_IMG_KEY, FALLBACK_SUB_KEY, now)) {
+        printf("WBI key fetch failed, using fallback keys: %s\n", reason.c_str());
         success();
         return;
     }
 
-    auto session = HTTP::createSession();
-    session->SetUrl(cpr::Url{parseLink(Api::Nav)});
-    session->GetCallback([success, error, now](const cpr::Response& r) {
-        if (r.status_code != 200) {
-            ERROR_MSG("WBI签名获取失败", -412);
+    ERROR_MSG("WBI签名获取失败: " + reason, -412);
+#else
+    (void)success;
+    (void)now;
+    (void)reason;
+    ERROR_MSG("WBI签名失败", -412);
+#endif
+}
+
+void updateWbiKeys(const std::function<void()>& success, const ErrorCallback& error) {
+    const std::time_t now = std::time(nullptr);
+
+    // 如果距离上次更新时间少于1小时，则不更新
+    {
+        std::lock_guard lock(g_mixin_key_mutex);
+        if (now - g_last_update_time < 3600 && !g_mixin_key.empty()) {
+            success();
             return;
         }
+    }
+
+    auto session = HTTP::createSession();
+#ifdef ANDROID
+    cpr::Header headers = HTTP::HEADERS;
+    headers["User-Agent"] =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+    headers["Referer"]         = "https://www.bilibili.com/";
+    headers["Accept"]          = "application/json, text/plain, */*";
+    headers["Accept-Language"] = "zh-CN,zh;q=0.9,en;q=0.8";
+    session->SetHeader(headers);
+#endif
+    session->SetUrl(cpr::Url{parseLink(Api::Nav)});
+    session->GetCallback([success, error, now](const cpr::Response& r) {
+#ifdef ANDROID
+        if (r.error) {
+            useFallbackWbiKeys(success, error, now, r.error.message);
+            return;
+        }
+#endif
+
+        if (r.status_code != 200) {
+#ifdef ANDROID
+            useFallbackWbiKeys(success, error, now, "HTTP status " + std::to_string(r.status_code));
+#else
+            ERROR_MSG("WBI签名获取失败", -412);
+#endif
+            return;
+        }
+
         try {
             if (nlohmann::json res = nlohmann::json::parse(r.text);
                 res.contains("data") && res["data"].contains("wbi_img")) {
@@ -87,19 +150,33 @@ void updateWbiKeys(const std::function<void()>& success, const ErrorCallback& er
                 const std::string sub_key = extractKeyFromUrl(res["data"]["wbi_img"]["sub_url"]);
 
                 // 计算并缓存 mixin_key
-                {
-                    std::lock_guard lock(g_mixin_key_mutex);
-                    g_mixin_key        = getMixinKey(img_key, sub_key);
-                    g_last_update_time = now;
+                if (!setMixinKey(img_key, sub_key, now)) {
+#ifdef ANDROID
+                    useFallbackWbiKeys(success, error, now, "empty or invalid keys from nav response");
+#else
+                    ERROR_MSG("WBI签名失败", -412);
+#endif
+                    return;
                 }
 
                 // 继续执行网络请求
                 success();
                 return;
             }
-        } catch (...) {
+        } catch (const std::exception& e) {
+#ifdef ANDROID
+            useFallbackWbiKeys(success, error, now, e.what());
+#else
+            ERROR_MSG("WBI签名失败", -412);
+#endif
+            return;
         }
+
+#ifdef ANDROID
+        useFallbackWbiKeys(success, error, now, "missing data.wbi_img in nav response");
+#else
         ERROR_MSG("WBI签名失败", -412);
+#endif
     });
 }
 
@@ -142,7 +219,12 @@ void encWbi(cpr::Parameters& params) {
     }
 
     // 计算 w_rid
-    std::string w_rid = websocketpp::md5::md5_hash_hex(query + g_mixin_key);
+    std::string mixin_key;
+    {
+        std::lock_guard lock(g_mixin_key_mutex);
+        mixin_key = g_mixin_key;
+    }
+    std::string w_rid = websocketpp::md5::md5_hash_hex(query + mixin_key);
 
     // 添加 w_rid 参数
     params.Add({"w_rid", w_rid});

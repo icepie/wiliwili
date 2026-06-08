@@ -48,6 +48,8 @@ jobs:
           bash scripts/android/patch_sdl_ndk27.sh
 
       - name: Prepare Android dependencies
+        env:
+          ANDROID_ABIS: ${{ matrix.abi }}
         run: |
           bash scripts/android/prepare_deps.sh
 
