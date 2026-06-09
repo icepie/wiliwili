@@ -255,7 +255,7 @@ public:
 
     /**
      * 设置硬解码模式
-     * @param value 为真时将硬解码设置为 auto-copy, 为假时将硬解码设置为 各个平台默认值
+     * @param value 为真时将硬解码设置为各平台 copy 模式, 为假时将硬解码设置为 各个平台默认值
      */
     void setHwdecCopyMode(bool value);
 
@@ -366,6 +366,8 @@ public:
     // 硬解方式
 #if defined(__SWITCH__) || defined(BOREALIS_USE_GXM)
     inline static std::string PLAYER_HWDEC_METHOD = "auto";
+#elif defined(ANDROID)
+    inline static std::string PLAYER_HWDEC_METHOD = "mediacodec-copy";
 #elif defined(__PSV__)
     inline static std::string PLAYER_HWDEC_METHOD = "vita-copy";
 #elif defined(PS4)

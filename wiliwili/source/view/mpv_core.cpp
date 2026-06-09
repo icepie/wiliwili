@@ -318,6 +318,11 @@ void MPVCore::init() {
     mpvSetOptionString(mpv, "reset-on-next-file", "speed,pause");
     mpvSetOptionString(mpv, "vo", "libmpv");
     mpvSetOptionString(mpv, "pulse-latency-hacks", "no");
+#ifdef ANDROID
+    mpvSetOptionString(mpv, "ao", "audiotrack,aaudio,opensles,");
+    mpvSetOptionString(mpv, "msg-level", "ao=debug");
+    brls::Logger::info("MPV Android audio output priority: audiotrack, aaudio, opensles");
+#endif
 
     mpvSetOption(mpv, "brightness", MPV_FORMAT_DOUBLE, &MPVCore::VIDEO_BRIGHTNESS);
     mpvSetOption(mpv, "contrast", MPV_FORMAT_DOUBLE, &MPVCore::VIDEO_CONTRAST);
@@ -359,6 +364,7 @@ void MPVCore::init() {
         brls::Logger::info("MPV hardware decode: {}", PLAYER_HWDEC_METHOD);
     } else {
         mpvSetOptionString(mpv, "hwdec", "no");
+        brls::Logger::info("MPV hardware decode: no");
     }
 
     // Making the loading process faster
@@ -1252,9 +1258,16 @@ void MPVCore::setMirror(bool value) {
 }
 
 void MPVCore::setHwdecCopyMode(bool value) {
-    // 如果正在使用硬解，那么将硬解更新为 auto-copy，避免直接硬解因为不经过 cpu 处理导致镜像翻转、滤镜无效
+    // 如果正在使用硬解，那么将硬解更新为 copy 模式，避免直接硬解因为不经过 cpu 处理导致镜像翻转、滤镜无效
     if (MPVCore::HARDWARE_DEC) {
-        std::string hwdec = value ? "auto-copy" : MPVCore::PLAYER_HWDEC_METHOD;
+        std::string hwdec = MPVCore::PLAYER_HWDEC_METHOD;
+        if (value) {
+#ifdef ANDROID
+            hwdec = "mediacodec-copy";
+#else
+            hwdec = "auto-copy";
+#endif
+        }
         command_async("set", "hwdec", hwdec);
         brls::Logger::info("MPV hardware decode: {}", hwdec);
     }

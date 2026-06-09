@@ -694,7 +694,7 @@ void ProgramConfig::load() {
 #endif
     }
 #ifdef IOS
-#elif defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#elif defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
     // 初始化上一次窗口位置
     loadHomeWindowState();
 #endif
@@ -793,7 +793,7 @@ void ProgramConfig::load() {
 
         // 设置窗口最小尺寸
 #ifdef IOS
-#elif defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#elif defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
         int minWidth  = getIntOption(SettingItem::MINIMUM_WINDOW_WIDTH);
         int minHeight = getIntOption(SettingItem::MINIMUM_WINDOW_HEIGHT);
         brls::Application::getPlatform()->setWindowSizeLimits(minWidth, minHeight, 0, 0);
@@ -805,7 +805,7 @@ void ProgramConfig::load() {
             [](brls::KeyState state) {
                 if (!state.pressed) return;
                 switch (state.key) {
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(ANDROID)
                     case brls::BRLS_KBD_KEY_F11:
                         ProgramConfig::instance().toggleFullscreen();
                         break;
@@ -824,7 +824,7 @@ void ProgramConfig::load() {
     });
 
 #ifdef IOS
-#elif defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#elif defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
     // 窗口将要关闭时, 保存窗口状态配置
     brls::Application::getExitEvent()->subscribe([this]() { saveHomeWindowState(); });
 #endif

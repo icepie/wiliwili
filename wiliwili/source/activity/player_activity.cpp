@@ -184,7 +184,7 @@ void PlayerActivity::onContentAvailable() {
     // 二维码按钮
     this->btnQR->getParent()->registerClickAction([this](...) {
         auto dialog = new ShareDialog();
-#if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#if defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
         dialog->open(fmt::format("https://www.bilibili.com/video/{}/", videoDetailResult.bvid), videoDetailResult.title,
                      videoDetailResult.desc, videoDetailResult.pic, videoDetailResult.owner.name);
 #else

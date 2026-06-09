@@ -114,7 +114,7 @@ void PlayerSeasonActivity::onContentAvailable() {
     // 二维码按钮
     this->btnQR->getParent()->registerClickAction([this](...) {
         auto dialog = new ShareDialog();
-#if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#if defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
         dialog->open(episodeResult.link, seasonInfo.season_title + " " + episodeResult.title, seasonInfo.evaluate,
                      seasonInfo.cover);
 #else

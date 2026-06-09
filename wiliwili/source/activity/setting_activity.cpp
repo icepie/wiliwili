@@ -26,11 +26,11 @@
 #include "view/mpv_core.hpp"
 #include "view/video_view.hpp"
 
-#if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#if defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
 #include "borealis/platforms/desktop/desktop_platform.hpp"
 #endif
 
-#ifdef __linux__
+#if defined(__linux__) && !defined(ANDROID)
 #include "borealis/platforms/desktop/steam_deck.hpp"
 #endif
 
@@ -193,7 +193,7 @@ void SettingActivity::onContentAvailable() {
 #if defined(__SWITCH__) || defined(__PSV__) || defined(PS4)
     btnOpenConfig->title->setText("wiliwili/setting/tools/others/config_dir"_i18n);
 #endif
-#ifdef __linux__
+#if defined(__linux__) && !defined(ANDROID)
     if (brls::isSteamDeck()) {
         btnOpenConfig->title->setText("wiliwili/setting/tools/others/config_dir"_i18n);
     }
@@ -201,7 +201,7 @@ void SettingActivity::onContentAvailable() {
     btnOpenConfig->registerClickAction([](...) -> bool {
         auto configPath = ProgramConfig::instance().getConfigDir();
         brls::Application::notify("wiliwili/setting/tools/others/config_dir"_i18n + ": " + configPath);
-#if !defined(__SWITCH__) && !defined(__PSV__) && !defined(PS4)
+#if !defined(__SWITCH__) && !defined(__PSV__) && !defined(PS4) && !defined(ANDROID)
 #ifdef __linux__
         if (!brls::isSteamDeck())
 #endif

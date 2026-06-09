@@ -19,7 +19,7 @@ ShareBox::ShareBox() {
                                        [this](const std::string& value) { this->image->setImageFromSVGFile(value); });
     this->registerStringXMLAttribute("action", [this](const std::string& value) { this->setAction(value); });
 
-#if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#if defined(__APPLE__) || (defined(__linux__) && !defined(ANDROID)) || defined(_WIN32)
     this->registerClickAction([this](...) {
         if (this->action == "clipboard") {
             brls::Application::getPlatform()->pasteToClipboard(this->link);
