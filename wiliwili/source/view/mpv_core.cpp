@@ -348,6 +348,20 @@ void MPVCore::init() {
             mpvSetOptionString(mpv, "allow-delayed-peak-detect", "yes");
         }
     }
+#ifdef ANDROID
+    else {
+        brls::Logger::info("MPV Android hardware decode render compatibility mode");
+        mpvSetOptionString(mpv, "scale", "bilinear");
+        mpvSetOptionString(mpv, "cscale", "bilinear");
+        mpvSetOptionString(mpv, "dscale", "bilinear");
+        mpvSetOptionString(mpv, "dither", "no");
+        mpvSetOptionString(mpv, "correct-downscaling", "no");
+        mpvSetOptionString(mpv, "linear-downscaling", "no");
+        mpvSetOptionString(mpv, "sigmoid-upscaling", "no");
+        mpvSetOptionString(mpv, "hdr-compute-peak", "no");
+        mpvSetOptionString(mpv, "allow-delayed-peak-detect", "yes");
+    }
+#endif
 
     if (MPVCore::INMEMORY_CACHE) {
         // cache
@@ -368,7 +382,11 @@ void MPVCore::init() {
     }
 
     // Making the loading process faster
-#if defined(__SWITCH__)
+#ifdef ANDROID
+    mpvSetOptionString(mpv, "vd-lavc-dr", "no");
+    mpvSetOptionString(mpv, "opengl-glfinish", "yes");
+    mpvSetOptionString(mpv, "opengl-early-flush", "no");
+#elif defined(__SWITCH__)
     mpvSetOptionString(mpv, "vd-lavc-dr", "no");
     mpvSetOptionString(mpv, "vd-lavc-threads", "4");
     // This should fix random crash, but I don't know why.

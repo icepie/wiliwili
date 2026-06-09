@@ -650,7 +650,11 @@ void ProgramConfig::load() {
 #endif
 
     // 初始化自定义的硬件加速方案
+#ifdef ANDROID
+    MPVCore::PLAYER_HWDEC_METHOD = "mediacodec-copy";
+#else
     MPVCore::PLAYER_HWDEC_METHOD = getSettingItem(SettingItem::PLAYER_HWDEC_CUSTOM, MPVCore::PLAYER_HWDEC_METHOD);
+#endif
 
     // 播放结束时自动退出全屏
     VideoView::EXIT_FULLSCREEN_ON_END = getBoolOption(SettingItem::PLAYER_EXIT_FULLSCREEN_ON_END);

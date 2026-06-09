@@ -209,6 +209,10 @@ endif ()
 
 # source cpp
 file(GLOB_RECURSE MAIN_SRC wiliwili/source/*.cpp)
+if (PLATFORM_ANDROID)
+    list(APPEND MAIN_SRC wiliwili/source/platform/android_ffmpeg_jni.cpp)
+endif ()
+list(REMOVE_DUPLICATES MAIN_SRC)
 if (WIN32)
     configure_file("${CMAKE_SOURCE_DIR}/wiliwili/app_win32.rc.in" "${CMAKE_BINARY_DIR}/app_win32.rc")
     list(APPEND MAIN_SRC ${CMAKE_BINARY_DIR}/app_win32.rc)

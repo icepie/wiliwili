@@ -7,6 +7,8 @@ import org.libsdl.app.PlatformUtils;
 import org.libsdl.app.SDLActivity;
 
 public class WiliwiliActivity extends SDLActivity {
+    private native void nativeInitFFmpegAndroid(Object context);
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -33,5 +35,11 @@ public class WiliwiliActivity extends SDLActivity {
                 "mpv",
                 "wiliwili"
         };
+    }
+
+    @Override
+    public void loadLibraries() {
+        super.loadLibraries();
+        nativeInitFFmpegAndroid(getApplicationContext());
     }
 }
