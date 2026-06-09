@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <clocale>
 #include <cmath>
+#include <cstring>
 #include <pystring.h>
 #include <borealis/core/thread.hpp>
 #include <borealis/core/application.hpp>
@@ -172,6 +173,30 @@ static inline void check_error(int status) {
     }
 }
 
+static std::string mpvNodeToString(const mpv_node& node) {
+    switch (node.format) {
+        case MPV_FORMAT_STRING:
+            return node.u.string ? node.u.string : "";
+        case MPV_FORMAT_INT64:
+            return fmt::format("{}", node.u.int64);
+        case MPV_FORMAT_DOUBLE:
+            return fmt::format("{}", node.u.double_);
+        case MPV_FORMAT_FLAG:
+            return node.u.flag ? "yes" : "no";
+        default:
+            return "";
+    }
+}
+
+static std::string mpvNodeMapValue(const mpv_node& node, const char* key) {
+    if (node.format != MPV_FORMAT_NODE_MAP || !node.u.list) return "";
+    for (int i = 0; i < node.u.list->num; i++) {
+        if (!node.u.list->keys[i] || std::strcmp(node.u.list->keys[i], key) != 0) continue;
+        return mpvNodeToString(node.u.list->values[i]);
+    }
+    return "";
+}
+
 #if defined(BOREALIS_USE_OPENGL) && !defined(MPV_SW_RENDER)
 static void *get_proc_address(void *unused, const char *name) {
 #ifdef __SDL2__
@@ -320,6 +345,7 @@ void MPVCore::init() {
     mpvSetOptionString(mpv, "pulse-latency-hacks", "no");
 #ifdef ANDROID
     mpvSetOptionString(mpv, "ao", "audiotrack,aaudio,opensles,");
+    mpvSetOptionString(mpv, "audio-spdif", "eac3,ac3,truehd");
     mpvSetOptionString(mpv, "msg-level", "ao=debug");
     brls::Logger::info("MPV Android audio output priority: audiotrack, aaudio, opensles");
 #endif
@@ -441,6 +467,10 @@ void MPVCore::init() {
     check_error(mpvObserveProperty(mpv, 19, "saturation", MPV_FORMAT_DOUBLE));
     check_error(mpvObserveProperty(mpv, 20, "gamma", MPV_FORMAT_DOUBLE));
     check_error(mpvObserveProperty(mpv, 21, "hue", MPV_FORMAT_DOUBLE));
+    check_error(mpvObserveProperty(mpv, 22, "video-codec", MPV_FORMAT_STRING));
+    check_error(mpvObserveProperty(mpv, 23, "audio-codec", MPV_FORMAT_STRING));
+    check_error(mpvObserveProperty(mpv, 24, "audio-codec-name", MPV_FORMAT_STRING));
+    check_error(mpvObserveProperty(mpv, 25, "video-params", MPV_FORMAT_NODE));
 
     // init renderer params
 #ifdef MPV_SW_RENDER
@@ -1165,6 +1195,27 @@ void MPVCore::eventMainLoop() {
                         break;
                     case 21:
                         if (data) video_hue = *(double *)data;
+                        break;
+                    case 22:
+                        if (data) brls::Logger::info("MPV video codec: {}", *(char **)data);
+                        break;
+                    case 23:
+                        if (data) brls::Logger::info("MPV audio codec: {}", *(char **)data);
+                        break;
+                    case 24:
+                        if (data) brls::Logger::info("MPV audio codec name: {}", *(char **)data);
+                        break;
+                    case 25:
+                        if (data) {
+                            auto *node = (mpv_node *)data;
+                            brls::Logger::info(
+                                "MPV video params: pixelformat={}, hw-pixelformat={}, colorprim={}, colormatrix={}, "
+                                "gamma={}, sig-peak={}, rotate={}, stereo-in={}",
+                                mpvNodeMapValue(*node, "pixelformat"), mpvNodeMapValue(*node, "hw-pixelformat"),
+                                mpvNodeMapValue(*node, "colorprim"), mpvNodeMapValue(*node, "colormatrix"),
+                                mpvNodeMapValue(*node, "gamma"), mpvNodeMapValue(*node, "sig-peak"),
+                                mpvNodeMapValue(*node, "rotate"), mpvNodeMapValue(*node, "stereo-in"));
+                        }
                         break;
                     default:
                         break;

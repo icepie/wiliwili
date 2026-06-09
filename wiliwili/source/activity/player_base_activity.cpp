@@ -629,10 +629,15 @@ void BasePlayerActivity::onVideoPlayUrl(const bilibili::VideoUrlResult& result) 
                 break;
             }
         }
+        brls::Logger::info("Dash video selected: quality={}, codec={}, size={}x{}, bandwidth={}",
+                           videoUrlResult.quality, v.codecid, v.width, v.height, v.bandwidth);
 
         // 将主音频和备份音频链接合并，当作不同的音轨传给播放器，可以实现在播放失败时自动切换
         std::vector<std::string> audios;
         if (!result.dash.audio.empty()) {
+            brls::Logger::info("Dash audio availability: standard={}, dolby={}, dolby_type={}, flac={}",
+                               result.dash.audio.size(), result.dash.dolby_audio.size(), result.dash.dolby_type,
+                               result.dash.has_flac);
             // 选择音轨，支持杜比/无损优先和多级回退
             auto pickDolby = [&]() -> std::optional<bilibili::DashMedia> {
                 if (result.dash.dolby_audio.empty()) return std::nullopt;
@@ -661,27 +666,67 @@ void BasePlayerActivity::onVideoPlayUrl(const bilibili::VideoUrlResult& result) 
 
             bilibili::DashMedia a = result.dash.audio[0];
             bool selected = false;
+            std::string selectedAudioKind = "standard";
+#ifdef ANDROID
             if (BILI::AUDIO_QUALITY == 30250) {
-                // Dolby → Lossless → High → Medium → Low
-                if (auto m = pickDolby()) { a = *m; selected = true; brls::Logger::debug("Picked Dolby audio (type {}), bw {}", result.dash.dolby_type, a.bandwidth);} else
-                if (auto m = pickFlac()) { a = *m; selected = true; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth);} else
-                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; }
+                // Dolby → Lossless → High → Medium → Low. Standard tracks are appended below as fallback.
+                if (auto m = pickDolby()) { a = *m; selected = true; selectedAudioKind = "dolby"; brls::Logger::info("Picked Dolby audio on Android (type {}), bw {}", result.dash.dolby_type, a.bandwidth); } else
+                if (auto m = pickFlac()) { a = *m; selected = true; selectedAudioKind = "flac"; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth); } else
+                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; }
             } else if (BILI::AUDIO_QUALITY == 30251) {
-                // Lossless → Dolby → High → Medium → Low
-                if (auto m = pickFlac()) { a = *m; selected = true; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth);} else
-                if (auto m = pickDolby()) { a = *m; selected = true; brls::Logger::debug("Picked Dolby audio (type {}), bw {}", result.dash.dolby_type, a.bandwidth);} else
-                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; }
+                // Lossless → Dolby → High → Medium → Low. Standard tracks are appended below as fallback.
+                if (auto m = pickFlac()) { a = *m; selected = true; selectedAudioKind = "flac"; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth); } else
+                if (auto m = pickDolby()) { a = *m; selected = true; selectedAudioKind = "dolby"; brls::Logger::info("Picked Dolby audio on Android (type {}), bw {}", result.dash.dolby_type, a.bandwidth); } else
+                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; }
             } else {
-                // Try user-selected standard, then fallback High→Medium→Low
-                if (auto m = pickStandard(BILI::AUDIO_QUALITY)) { a = *m; selected = true; }
+                // Try user-selected standard, then fallback High→Medium→Low, then FLAC/Dolby as last resort.
+                if (auto m = pickStandard(BILI::AUDIO_QUALITY)) { a = *m; selected = true; selectedAudioKind = "standard"; }
                 if (!selected) {
-                    if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; }
+                    if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; }
+                }
+                if (!selected) {
+                    if (auto m = pickFlac()) { a = *m; selected = true; selectedAudioKind = "flac"; }
+                }
+                if (!selected) {
+                    if (auto m = pickDolby()) { a = *m; selected = true; selectedAudioKind = "dolby"; }
                 }
             }
+#else
+            if (BILI::AUDIO_QUALITY == 30250) {
+                // Dolby → Lossless → High → Medium → Low
+                if (auto m = pickDolby()) { a = *m; selected = true; selectedAudioKind = "dolby"; brls::Logger::debug("Picked Dolby audio (type {}), bw {}", result.dash.dolby_type, a.bandwidth);} else
+                if (auto m = pickFlac()) { a = *m; selected = true; selectedAudioKind = "flac"; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth);} else
+                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; }
+            } else if (BILI::AUDIO_QUALITY == 30251) {
+                // Lossless → Dolby → High → Medium → Low
+                if (auto m = pickFlac()) { a = *m; selected = true; selectedAudioKind = "flac"; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth);} else
+                if (auto m = pickDolby()) { a = *m; selected = true; selectedAudioKind = "dolby"; brls::Logger::debug("Picked Dolby audio (type {}), bw {}", result.dash.dolby_type, a.bandwidth);} else
+                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; }
+            } else {
+                // Try user-selected standard, then fallback High→Medium→Low
+                if (auto m = pickStandard(BILI::AUDIO_QUALITY)) { a = *m; selected = true; selectedAudioKind = "standard"; }
+                if (!selected) {
+                    if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; }
+                }
+            }
+#endif
             // 生成音频列表
             audios.emplace_back(a.base_url);
             audios.insert(audios.end(), a.backup_url.begin(), a.backup_url.end());
-            brls::Logger::debug("Dash quality: {}; video: {}; audio: {}", videoUrlResult.quality, v.codecid, a.id);
+#ifdef ANDROID
+            if (selectedAudioKind != "standard") {
+                for (int q : {30280, 30232, 30216}) {
+                    auto fallback = pickStandard(q);
+                    if (!fallback || fallback->base_url == a.base_url) continue;
+                    audios.emplace_back(fallback->base_url);
+                    audios.insert(audios.end(), fallback->backup_url.begin(), fallback->backup_url.end());
+                    brls::Logger::info("Append Android audio fallback: id={}, bandwidth={}, backups={}",
+                                       fallback->id, fallback->bandwidth, fallback->backup_url.size());
+                }
+            }
+#endif
+            brls::Logger::info("Dash audio selected: kind={}, id={}, codec={}, bandwidth={}, urls={}",
+                               selectedAudioKind, a.id, a.codecid, a.bandwidth, audios.size());
         }
 
         // 给播放器设置链接

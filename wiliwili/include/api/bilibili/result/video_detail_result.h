@@ -454,13 +454,14 @@ inline void from_json(const nlohmann::json& nlohmann_json_j, VideoDUrl& nlohmann
 
 class DashMedia {
 public:
-    int id;  // The format ID of Bilibili, corresponds to one resolution.
-             // There may be items with the same ID but different bandwidth.
+    int id = 0;  // The format ID of Bilibili, corresponds to one resolution.
+                 // There may be items with the same ID but different bandwidth.
     std::string base_url;
     std::vector<std::string> backup_url;
-    unsigned int bandwidth;
-    int width, height;  // only for video
-    int codecid;
+    unsigned int bandwidth = 0;
+    int width              = 0;
+    int height             = 0;  // only for video
+    int codecid            = 0;
 };
 inline void from_json(const nlohmann::json& nlohmann_json_j, DashMedia& nlohmann_json_t) {
     if (nlohmann_json_j.contains("backup_url") && !nlohmann_json_j.at("backup_url").is_null()) {
