@@ -367,7 +367,7 @@ public:
 #if defined(__SWITCH__) || defined(BOREALIS_USE_GXM)
     inline static std::string PLAYER_HWDEC_METHOD = "auto";
 #elif defined(ANDROID)
-    inline static std::string PLAYER_HWDEC_METHOD = "mediacodec-copy";
+    inline static std::string PLAYER_HWDEC_METHOD = "mediacodec";
 #elif defined(__PSV__)
     inline static std::string PLAYER_HWDEC_METHOD = "vita-copy";
 #elif defined(PS4)

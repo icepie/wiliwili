@@ -409,9 +409,11 @@ void MPVCore::init() {
 
     // Making the loading process faster
 #ifdef ANDROID
-    mpvSetOptionString(mpv, "vd-lavc-dr", "no");
-    mpvSetOptionString(mpv, "opengl-glfinish", "yes");
+    bool androidZeroCopy = MPVCore::HARDWARE_DEC && MPVCore::PLAYER_HWDEC_METHOD == "mediacodec";
+    mpvSetOptionString(mpv, "vd-lavc-dr", androidZeroCopy ? "yes" : "no");
+    mpvSetOptionString(mpv, "opengl-glfinish", androidZeroCopy ? "no" : "yes");
     mpvSetOptionString(mpv, "opengl-early-flush", "no");
+    brls::Logger::info("MPV Android zero-copy direct rendering: {}", androidZeroCopy ? "yes" : "no");
 #elif defined(__SWITCH__)
     mpvSetOptionString(mpv, "vd-lavc-dr", "no");
     mpvSetOptionString(mpv, "vd-lavc-threads", "4");
@@ -1337,6 +1339,10 @@ void MPVCore::setHwdecCopyMode(bool value) {
             hwdec = "auto-copy";
 #endif
         }
+#ifdef ANDROID
+        command_async("set", "vd-lavc-dr", value ? "no" : "yes");
+        command_async("set", "opengl-glfinish", value ? "yes" : "no");
+#endif
         command_async("set", "hwdec", hwdec);
         brls::Logger::info("MPV hardware decode: {}", hwdec);
     }
