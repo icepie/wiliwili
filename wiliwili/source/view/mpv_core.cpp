@@ -345,9 +345,8 @@ void MPVCore::init() {
     mpvSetOptionString(mpv, "pulse-latency-hacks", "no");
 #ifdef ANDROID
     mpvSetOptionString(mpv, "ao", "audiotrack,aaudio,opensles,");
-    mpvSetOptionString(mpv, "audio-spdif", "eac3,ac3,truehd");
     mpvSetOptionString(mpv, "msg-level", "ao=debug");
-    brls::Logger::info("MPV Android audio output priority: audiotrack, aaudio, opensles");
+    brls::Logger::info("MPV Android audio output priority: audiotrack, aaudio, opensles; passthrough disabled");
 #endif
 
     mpvSetOption(mpv, "brightness", MPV_FORMAT_DOUBLE, &MPVCore::VIDEO_BRIGHTNESS);

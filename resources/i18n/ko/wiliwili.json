@@ -9,6 +9,7 @@
       "playback": {
         "header": "재생",
         "player": "플레이어",
+        "player_core": "플레이어 코어",
         "report": "이력 재생 기록 업로드",
         "player_bar": "진행 표시줄 항상 표시",
         "low_quality": "낮은 품질의 디코딩(CPU 사용량이 적음)",

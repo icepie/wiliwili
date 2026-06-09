@@ -98,6 +98,13 @@
             </intent-filter>
             -->
         </activity>
+        <activity android:name=".player.ExoPlayerActivity"
+            android:label="@string/app_name"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:exported="false"
+            android:preferMinimalPostProcessing="true"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
     </application>
 
 </manifest>

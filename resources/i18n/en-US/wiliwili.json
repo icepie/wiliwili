@@ -9,6 +9,7 @@
       "playback": {
         "header": "Playback",
         "player": "Player",
+        "player_core": "Player core",
         "report": "Upload history playback record",
         "player_bar": "Always show progress bar",
         "low_quality": "Low quality decoding (with less CPU usage)",

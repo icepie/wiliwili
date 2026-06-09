@@ -19,6 +19,8 @@ import android.provider.Settings;
 import android.view.Window;
 import android.view.WindowManager;
 
+import java.util.ArrayList;
+
 public class PlatformUtils {
     public static boolean isBatterySupported() {
         Context context = SDLActivity.getContext();
@@ -105,6 +107,54 @@ public class PlatformUtils {
         if (intent.resolveActivity(context.getPackageManager()) != null) {
             context.startActivity(intent);
         }
+    }
+
+    public static void openExoPlayer(String videoUrl, String[] audioUrls, int startSeconds, int endSeconds,
+                                     String cookie) {
+        String[] videos = videoUrl == null || videoUrl.isEmpty() ? new String[0] : new String[] { videoUrl };
+        openExoPlayerWithVideos(videos, audioUrls, startSeconds, endSeconds, cookie);
+    }
+
+    public static void openExoPlayerBv(String bvid, long cid, int progress, String cookie) {
+        Context context = SDLActivity.getContext();
+        if (context == null || bvid == null || bvid.isEmpty()) {
+            return;
+        }
+        cn.xfangfang.wiliwili.player.ExoPlayerActivity.openBv(context, bvid, cid, progress, cookie);
+    }
+
+    public static void openExoPlayerWithVideos(String[] videoUrls, String[] audioUrls, int startSeconds, int endSeconds,
+                                               String cookie) {
+        Context context = SDLActivity.getContext();
+        if (context == null || videoUrls == null || videoUrls.length == 0) {
+            return;
+        }
+
+        Intent intent = new Intent(context, cn.xfangfang.wiliwili.player.ExoPlayerActivity.class);
+        ArrayList<String> videos = new ArrayList<>();
+        for (String videoUrl : videoUrls) {
+            if (videoUrl != null && !videoUrl.isEmpty()) {
+                videos.add(videoUrl);
+            }
+        }
+        if (videos.isEmpty()) {
+            return;
+        }
+        intent.putExtra(cn.xfangfang.wiliwili.player.ExoPlayerActivity.EXTRA_VIDEO_URL, videos.get(0));
+        intent.putStringArrayListExtra(cn.xfangfang.wiliwili.player.ExoPlayerActivity.EXTRA_VIDEO_URLS, videos);
+        intent.putExtra(cn.xfangfang.wiliwili.player.ExoPlayerActivity.EXTRA_START_SECONDS, startSeconds);
+        intent.putExtra(cn.xfangfang.wiliwili.player.ExoPlayerActivity.EXTRA_END_SECONDS, endSeconds);
+        intent.putExtra(cn.xfangfang.wiliwili.player.ExoPlayerActivity.EXTRA_COOKIE, cookie);
+        ArrayList<String> audios = new ArrayList<>();
+        if (audioUrls != null) {
+            for (String audioUrl : audioUrls) {
+                if (audioUrl != null && !audioUrl.isEmpty()) {
+                    audios.add(audioUrl);
+                }
+            }
+        }
+        intent.putStringArrayListExtra(cn.xfangfang.wiliwili.player.ExoPlayerActivity.EXTRA_AUDIO_URLS, audios);
+        context.startActivity(intent);
     }
 
     public static float getSystemScreenBrightness(Context context) {

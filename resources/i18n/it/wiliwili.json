@@ -9,6 +9,7 @@
       "playback": {
         "header": "Riproduzione",
         "player": "Lettore",
+        "player_core": "Core lettore",
         "report": "Carica cronologia riproduzione",
         "player_bar": "Mostra sempre la barra di avanzamento",
         "low_quality": "Decodifica di bassa qualità (Minor utilizzo CPU)",

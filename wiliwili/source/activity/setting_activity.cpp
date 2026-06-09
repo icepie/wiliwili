@@ -593,6 +593,20 @@ void SettingActivity::onContentAvailable() {
         selectorQuality->setVisibility(brls::Visibility::GONE);
     }
 
+#ifdef ANDROID
+    auto playerCoreOption = conf.getOptionData(SettingItem::PLAYER_CORE);
+    selectorPlayerCore->init("wiliwili/setting/app/playback/player_core"_i18n, {"mpv", "ExoPlayer"},
+                             conf.getStringOptionIndex(SettingItem::PLAYER_CORE),
+                             [playerCoreOption](int data) {
+                                 ProgramConfig::instance().setSettingItem(SettingItem::PLAYER_CORE,
+                                                                          playerCoreOption.optionList[data]);
+                                 DialogHelper::showDialog("wiliwili/setting/quit_hint"_i18n);
+                                 return true;
+                             });
+#else
+    selectorPlayerCore->setVisibility(brls::Visibility::GONE);
+#endif
+
     /// Opencc
 #if defined(IOS) || defined(DISABLE_OPENCC)
     btnOpencc->setVisibility(brls::Visibility::GONE);

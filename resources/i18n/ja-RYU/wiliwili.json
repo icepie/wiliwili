@@ -9,6 +9,7 @@
       "playback": {
         "header": "再生",
         "player": "プレーヤー",
+        "player_core": "プレーヤーコア",
         "report": "アップロード履歴とぅ再生記録",
         "player_bar": "プログレスバー常に表示すん",
         "low_quality": "低品質ぬデコード (CPU使用率がふぃくくなやびーん)",

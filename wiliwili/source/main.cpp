@@ -20,6 +20,7 @@
 #endif
 
 int main(int argc, char* argv[]) {
+    std::string debugOpenBV;
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "-d") == 0) {
             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
@@ -30,6 +31,8 @@ int main(int argc, char* argv[]) {
         } else if (std::strcmp(argv[i], "-o") == 0) {
             const char* path = (i + 1 < argc) ? argv[++i] : "wiliwili.log";
             brls::Logger::setLogOutput(std::fopen(path, "w+"));
+        } else if (std::strcmp(argv[i], "--open-bv") == 0 && i + 1 < argc) {
+            debugOpenBV = argv[++i];
         }
     }
 
@@ -57,6 +60,9 @@ int main(int argc, char* argv[]) {
 
     if (brls::Application::getPlatform()->isApplicationMode()) {
         Intent::openMain();
+        if (!debugOpenBV.empty()) {
+            Intent::openBV(debugOpenBV);
+        }
         // Uncomment these lines to debug activities
         //        Intent::openBV("BV1Da411Y7U4");  // 弹幕防遮挡 (横屏)
         //        Intent::openBV("BV1iN4y1m7J3");  // 弹幕防遮挡 (竖屏)

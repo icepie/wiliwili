@@ -13,6 +13,11 @@
 #include <borealis/views/applet_frame.hpp>
 #include <pystring.h>
 
+#ifdef ANDROID
+#include <jni.h>
+#include <SDL2/SDL_system.h>
+#endif
+
 #include "utils/number_helper.hpp"
 #include "utils/config_helper.hpp"
 #include "utils/string_helper.hpp"
@@ -45,6 +50,109 @@ static int getSeekRange(int current) {
     if (current <= 1200) return 60;
     return current / 20;
 }
+
+#ifdef ANDROID
+static bool isAndroidExoPlayerCoreEnabled() {
+    return ProgramConfig::instance().getSettingItem(SettingItem::PLAYER_CORE, std::string{"mpv"}) == "exoplayer";
+}
+
+static std::string getAndroidExoPlayerCookieHeader() {
+    auto cookie = ProgramConfig::instance().getCookie();
+    std::vector<std::string> parts;
+    parts.reserve(cookie.size());
+    for (auto& item : cookie) {
+        if (item.first.empty() || item.second.empty()) continue;
+        parts.emplace_back(item.first + "=" + item.second);
+    }
+    return pystring::join("; ", parts);
+}
+
+static jobjectArray makeJavaStringArray(JNIEnv* env, const std::vector<std::string>& values) {
+    jclass stringClass = env->FindClass("java/lang/String");
+    jobjectArray array = env->NewObjectArray(values.size(), stringClass, nullptr);
+    for (jsize i = 0; i < static_cast<jsize>(values.size()); i++) {
+        jstring item = env->NewStringUTF(values[i].c_str());
+        env->SetObjectArrayElement(array, i, item);
+        env->DeleteLocalRef(item);
+    }
+    env->DeleteLocalRef(stringClass);
+    return array;
+}
+
+static void openAndroidExoPlayer(const std::vector<std::string>& urls, const std::vector<std::string>& audios, int start,
+                                 int end) {
+    if (urls.empty()) {
+        brls::Logger::error("ExoPlayer bridge: no video url");
+        return;
+    }
+
+    auto* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    if (!env) {
+        brls::Logger::error("ExoPlayer bridge: JNI env is unavailable");
+        return;
+    }
+
+    jclass utilsClass = env->FindClass("org/libsdl/app/PlatformUtils");
+    if (!utilsClass) {
+        brls::Logger::error("ExoPlayer bridge: PlatformUtils not found");
+        return;
+    }
+
+    jmethodID method =
+        env->GetStaticMethodID(utilsClass, "openExoPlayerWithVideos", "([Ljava/lang/String;[Ljava/lang/String;IILjava/lang/String;)V");
+    if (!method) {
+        brls::Logger::error("ExoPlayer bridge: openExoPlayerWithVideos method not found");
+        env->DeleteLocalRef(utilsClass);
+        return;
+    }
+
+    jobjectArray jurls = makeJavaStringArray(env, urls);
+    jobjectArray jaudios = makeJavaStringArray(env, audios);
+    std::string cookie = getAndroidExoPlayerCookieHeader();
+    jstring jcookie = env->NewStringUTF(cookie.c_str());
+
+    env->CallStaticVoidMethod(utilsClass, method, jurls, jaudios, start, end, jcookie);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        brls::Logger::error("ExoPlayer bridge: failed to launch Android player");
+    } else {
+        brls::Logger::info("ExoPlayer bridge: launched Android player, videos={}, audios={}", urls.size(),
+                           audios.size());
+    }
+
+    env->DeleteLocalRef(jaudios);
+    env->DeleteLocalRef(jurls);
+    env->DeleteLocalRef(jcookie);
+    env->DeleteLocalRef(utilsClass);
+}
+
+static void openAndroidExoPlayer(const std::string& url, const std::vector<std::string>& audios, int start, int end) {
+    openAndroidExoPlayer(std::vector<std::string>{url}, audios, start, end);
+}
+
+struct AndroidExoPlayerPendingSource {
+    std::vector<std::string> videos;
+    std::vector<std::string> audios;
+    int start = 0;
+    int end   = -1;
+    int delay = 0;
+};
+
+static AndroidExoPlayerPendingSource androidExoPlayerPendingSource;
+
+static void scheduleAndroidExoPlayerOpen() {
+    if (androidExoPlayerPendingSource.videos.empty()) return;
+    if (androidExoPlayerPendingSource.delay) {
+        brls::cancelDelay(androidExoPlayerPendingSource.delay);
+    }
+    androidExoPlayerPendingSource.delay = brls::delay(100, []() {
+        auto pending = androidExoPlayerPendingSource;
+        androidExoPlayerPendingSource = {};
+        openAndroidExoPlayer(pending.videos, pending.audios, pending.start, pending.end);
+    });
+}
+#endif
 
 #define CHECK_OSD(shake)                                                              \
     if (is_osd_lock) {                                                                \
@@ -834,6 +942,18 @@ void VideoView::setUrl(const std::string& url, int start, int end, const std::st
 }
 
 void VideoView::setUrl(const std::string& url, int start, int end, const std::vector<std::string>& audios) {
+#ifdef ANDROID
+    if (isAndroidExoPlayerCoreEnabled()) {
+        mpvCore->stop();
+        androidExoPlayerPendingSource = {};
+        androidExoPlayerPendingSource.videos.emplace_back(url);
+        androidExoPlayerPendingSource.audios = audios;
+        androidExoPlayerPendingSource.start  = start;
+        androidExoPlayerPendingSource.end    = end;
+        scheduleAndroidExoPlayerOpen();
+        return;
+    }
+#endif
     mpvCore->setUrl(url, genExtraUrlParam(start, end, audios));
 }
 
@@ -842,10 +962,32 @@ void VideoView::setBackupUrl(const std::string& url, int start, int end, const s
 }
 
 void VideoView::setBackupUrl(const std::string& url, int start, int end, const std::vector<std::string>& audios) {
+#ifdef ANDROID
+    if (isAndroidExoPlayerCoreEnabled()) {
+        androidExoPlayerPendingSource.videos.emplace_back(url);
+        androidExoPlayerPendingSource.start = start;
+        androidExoPlayerPendingSource.end   = end;
+        if (androidExoPlayerPendingSource.audios.empty()) {
+            androidExoPlayerPendingSource.audios = audios;
+        }
+        scheduleAndroidExoPlayerOpen();
+        brls::Logger::debug("ExoPlayer bridge: append backup video url, total={}",
+                            androidExoPlayerPendingSource.videos.size());
+        return;
+    }
+#endif
     mpvCore->setBackupUrl(url, genExtraUrlParam(start, end, audios));
 }
 
 void VideoView::setUrl(const std::vector<EDLUrl>& edl_urls, int start, int end) {
+#ifdef ANDROID
+    if (isAndroidExoPlayerCoreEnabled() && !edl_urls.empty()) {
+        // ExoPlayer bridge does not support mpv EDL. Use the first URL as a compatibility fallback.
+        mpvCore->stop();
+        openAndroidExoPlayer(edl_urls.front().url, {}, start, end);
+        return;
+    }
+#endif
     std::string url = "edl://";
     std::vector<std::string> urls;
     bool delay_open = true;
@@ -1746,4 +1888,3 @@ void VideoView::registerCommonActions(brls::Activity* activity) {
         return true;
     });
 }
-

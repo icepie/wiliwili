@@ -21,6 +21,57 @@
 
 #include "presenter/video_detail.hpp"
 
+#ifdef ANDROID
+#include <jni.h>
+#include <SDL2/SDL_system.h>
+#include <pystring.h>
+
+namespace {
+bool isAndroidExoPlayerCoreEnabled() {
+    return ProgramConfig::instance().getSettingItem(SettingItem::PLAYER_CORE, std::string{"mpv"}) == "exoplayer";
+}
+
+std::string getAndroidCookieHeader() {
+    auto cookie = ProgramConfig::instance().getCookie();
+    std::vector<std::string> parts;
+    parts.reserve(cookie.size());
+    for (auto& item : cookie) {
+        if (item.first.empty() || item.second.empty()) continue;
+        parts.emplace_back(item.first + "=" + item.second);
+    }
+    return pystring::join("; ", parts);
+}
+
+bool openAndroidExoPlayerBv(const std::string& bvid, uint64_t cid, int progress) {
+    auto* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    if (!env) return false;
+
+    jclass utilsClass = env->FindClass("org/libsdl/app/PlatformUtils");
+    if (!utilsClass) return false;
+
+    jmethodID method = env->GetStaticMethodID(utilsClass, "openExoPlayerBv", "(Ljava/lang/String;JILjava/lang/String;)V");
+    if (!method) {
+        env->DeleteLocalRef(utilsClass);
+        return false;
+    }
+
+    std::string cookie = getAndroidCookieHeader();
+    jstring jbvid      = env->NewStringUTF(bvid.c_str());
+    jstring jcookie    = env->NewStringUTF(cookie.c_str());
+    env->CallStaticVoidMethod(utilsClass, method, jbvid, static_cast<jlong>(cid), static_cast<jint>(progress), jcookie);
+    bool ok = !env->ExceptionCheck();
+    if (!ok) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
+    env->DeleteLocalRef(jbvid);
+    env->DeleteLocalRef(jcookie);
+    env->DeleteLocalRef(utilsClass);
+    return ok;
+}
+}  // namespace
+#endif
+
 void Intent::openAV(const std::string& avid, uint64_t cid, int progress) {
     // av to bv
     // Based on https://github.com/bolanxian/metadata-fetcher/blob/master/src/utils/bv-encode.ts
@@ -49,6 +100,11 @@ void Intent::openAV(const std::string& avid, uint64_t cid, int progress) {
 }
 
 void Intent::openBV(const std::string& bvid, uint64_t cid, int progress) {
+#ifdef ANDROID
+    if (isAndroidExoPlayerCoreEnabled() && openAndroidExoPlayerBv(bvid, cid, progress)) {
+        return;
+    }
+#endif
     auto activity = new PlayerActivity(bvid, cid, progress);
     brls::Application::pushActivity(activity, brls::TransitionAnimation::NONE);
 }

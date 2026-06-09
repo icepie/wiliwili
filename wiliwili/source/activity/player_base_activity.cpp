@@ -669,17 +669,18 @@ void BasePlayerActivity::onVideoPlayUrl(const bilibili::VideoUrlResult& result) 
             std::string selectedAudioKind = "standard";
 #ifdef ANDROID
             if (BILI::AUDIO_QUALITY == 30250) {
-                // Dolby → Lossless → High → Medium → Low. Standard tracks are appended below as fallback.
-                if (auto m = pickDolby()) { a = *m; selected = true; selectedAudioKind = "dolby"; brls::Logger::info("Picked Dolby audio on Android (type {}), bw {}", result.dash.dolby_type, a.bandwidth); } else
-                if (auto m = pickFlac()) { a = *m; selected = true; selectedAudioKind = "flac"; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth); } else
-                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; }
+                // Prefer standard AAC on Android. Dolby/FLAC DASH tracks can be exposed by Bilibili even when
+                // the app audio output path cannot decode or pass them through reliably.
+                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; } else
+                if (auto m = pickDolby()) { a = *m; selected = true; selectedAudioKind = "dolby"; brls::Logger::info("Picked Dolby audio on Android fallback (type {}), bw {}", result.dash.dolby_type, a.bandwidth); } else
+                if (auto m = pickFlac()) { a = *m; selected = true; selectedAudioKind = "flac"; brls::Logger::debug("Picked FLAC audio fallback, bw {}", a.bandwidth); }
             } else if (BILI::AUDIO_QUALITY == 30251) {
-                // Lossless → Dolby → High → Medium → Low. Standard tracks are appended below as fallback.
-                if (auto m = pickFlac()) { a = *m; selected = true; selectedAudioKind = "flac"; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth); } else
-                if (auto m = pickDolby()) { a = *m; selected = true; selectedAudioKind = "dolby"; brls::Logger::info("Picked Dolby audio on Android (type {}), bw {}", result.dash.dolby_type, a.bandwidth); } else
-                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; }
+                // Same Android compatibility policy for Hi-Res: AAC first, advanced tracks only as last resort.
+                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; } else
+                if (auto m = pickFlac()) { a = *m; selected = true; selectedAudioKind = "flac"; brls::Logger::debug("Picked FLAC audio fallback, bw {}", a.bandwidth); } else
+                if (auto m = pickDolby()) { a = *m; selected = true; selectedAudioKind = "dolby"; brls::Logger::info("Picked Dolby audio on Android fallback (type {}), bw {}", result.dash.dolby_type, a.bandwidth); }
             } else {
-                // Try user-selected standard, then fallback High→Medium→Low, then FLAC/Dolby as last resort.
+                // Try user-selected standard, then fallback High->Medium->Low, then FLAC/Dolby as last resort.
                 if (auto m = pickStandard(BILI::AUDIO_QUALITY)) { a = *m; selected = true; selectedAudioKind = "standard"; }
                 if (!selected) {
                     if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; selectedAudioKind = "standard"; }
@@ -722,6 +723,13 @@ void BasePlayerActivity::onVideoPlayUrl(const bilibili::VideoUrlResult& result) 
                     audios.insert(audios.end(), fallback->backup_url.begin(), fallback->backup_url.end());
                     brls::Logger::info("Append Android audio fallback: id={}, bandwidth={}, backups={}",
                                        fallback->id, fallback->bandwidth, fallback->backup_url.size());
+                }
+            } else {
+                for (int q : {30280, 30232, 30216}) {
+                    auto fallback = pickStandard(q);
+                    if (!fallback || fallback->base_url == a.base_url) continue;
+                    audios.emplace_back(fallback->base_url);
+                    audios.insert(audios.end(), fallback->backup_url.begin(), fallback->backup_url.end());
                 }
             }
 #endif

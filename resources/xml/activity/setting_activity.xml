@@ -46,6 +46,9 @@
                                 axis="column"
                                 marginBottom="30px">
 
+                            <SelectorCell
+                                    id="setting/video/core"/>
+
                             <brls:BooleanCell
                                     id="setting/video/quality"/>
 
